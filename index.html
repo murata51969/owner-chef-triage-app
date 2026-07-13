@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>当事者レビュー</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="theme-color" content="#0d9488">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="当事者レビュー">
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1a1a1a; --sub: #667085;
+    --line: #e4e7ec; --accent: #0d9488;
+    --insider: #16a34a; --ambiguous: #d97706; --outsider: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101418; --card: #1c2128; --text: #e6e8ea; --sub: #9aa4b2;
+      --line: #30363d; --accent: #2dd4bf;
+      --insider: #22c55e; --ambiguous: #f59e0b; --outsider: #f87171;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--card);
+  }
+  header h1 { font-size: 15px; font-weight: 600; }
+  header .actions { display: flex; gap: 6px; }
+  header button {
+    font-size: 12px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: transparent; color: var(--sub);
+  }
+  #syncState { font-size: 11px; color: var(--sub); }
+  main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .screen { flex: 1; overflow-y: auto; padding: 14px; display: none; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* --- 設定画面 --- */
+  #setup label { display: block; font-size: 12px; color: var(--sub); margin: 12px 0 4px; }
+  #setup input {
+    width: 100%; padding: 12px; font-size: 15px; border: 1px solid var(--line);
+    border-radius: 10px; background: var(--card); color: var(--text);
+  }
+  #setup .help {
+    margin-top: 16px; padding: 12px; background: var(--card); border-radius: 10px;
+    font-size: 12px; color: var(--sub); line-height: 1.7;
+  }
+  #setup .help a { color: var(--accent); }
+  #setup button.primary {
+    margin-top: 16px; width: 100%; padding: 14px; font-size: 16px; font-weight: 600;
+    color: #fff; background: var(--accent); border: none; border-radius: 12px;
+  }
+
+  /* --- 判定画面 --- */
+  #progress { font-size: 12px; color: var(--sub); text-align: center; margin-bottom: 8px; }
+  .card {
+    flex: 1; display: flex; flex-direction: column; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px; padding: 16px; overflow: hidden;
+    min-height: 0;
+  }
+  .card .meta { font-size: 13px; color: var(--sub); margin-bottom: 6px; }
+  .tier {
+    display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 11px;
+    font-weight: 700; color: #fff; vertical-align: middle; margin-left: 4px;
+  }
+  .tier-strong { background: #16a34a; }
+  .tier-mid { background: #d97706; }
+  .tier-weak, .tier-unknown { background: #6b7280; }
+  .chipsRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+  .chipsRow .label { font-size: 11px; color: var(--sub); width: 100%; margin-bottom: 2px; }
+  .echip, .nchip {
+    padding: 4px 10px; font-size: 12px; border-radius: 999px; border: 1px solid;
+  }
+  .echip { background: #dcfce7; color: #166534; border-color: #86efac; }
+  .nchip { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  @media (prefers-color-scheme: dark) {
+    .echip { background: #052e1c; color: #4ade80; border-color: #166534; }
+    .nchip { background: #450a0a; color: #f87171; border-color: #7f1d1d; }
+  }
+  .commentsHead { font-size: 12px; color: var(--sub); margin: 12px 0 4px; font-weight: 600; }
+  .card .body {
+    font-size: 14.5px; line-height: 1.7; color: var(--text);
+    -webkit-overflow-scrolling: touch; padding-bottom: 4px;
+  }
+  .card .body.clamped { flex: 0 0 auto; max-height: 230px; overflow: hidden; }
+  .card .body.expanded { flex: 1 1 auto; overflow-y: auto; min-height: 0; max-height: none; }
+  .commentList { list-style: none; }
+  .commentList li {
+    padding: 9px 11px; margin-bottom: 7px; background: var(--bg); border-radius: 9px;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .commentList li.empty { color: var(--sub); text-align: center; background: none; }
+  .toggleBody {
+    border: none; background: transparent; color: var(--accent);
+    font-size: 13px; padding: 8px 0 0; text-align: left;
+  }
+  .card .spacer { flex: 1; }
+  .card .body.expanded ~ .spacer { display: none; }
+  .notebox { margin-top: 10px; }
+  .notebox textarea {
+    width: 100%; padding: 10px 12px; font-size: 16px; line-height: 1.5;
+    border: 1px solid var(--line); border-radius: 10px;
+    background: var(--bg); color: var(--text); resize: none; font-family: inherit;
+  }
+  .verdicts { display: flex; gap: 8px; margin-top: 12px; }
+  .verdicts button {
+    flex: 1; padding: 12px 4px; font-size: 13px; font-weight: 700; color: #fff;
+    border: none; border-radius: 14px; line-height: 1.5; touch-action: manipulation;
+  }
+  .verdicts .insider    { background: var(--insider); }
+  .verdicts .ambiguous  { background: var(--ambiguous); }
+  .verdicts .outsider   { background: var(--outsider); }
+  .subactions { display: flex; justify-content: center; margin-top: 10px; }
+  .subactions button {
+    font-size: 13px; color: var(--sub); background: transparent; border: none; padding: 8px 16px;
+  }
+  .done-box { text-align: center; margin: auto; color: var(--sub); font-size: 14px; line-height: 2; }
+  .done-box .big { font-size: 40px; }
+
+  /* --- 一覧画面 --- */
+  #summary { display: flex; gap: 8px; margin-bottom: 12px; }
+  #summary .chip {
+    flex: 1; text-align: center; padding: 10px 0; border-radius: 10px; background: var(--card);
+    border: 1px solid var(--line); font-size: 11px; color: var(--sub);
+  }
+  #summary .chip b { display: block; font-size: 18px; color: var(--text); }
+  .rowitem {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 10px 12px; margin-bottom: 8px; display: flex; align-items: center; gap: 10px;
+  }
+  .rowitem .v {
+    flex-shrink: 0; font-size: 12px; font-weight: 700; color: #fff;
+    padding: 6px 10px; border-radius: 8px; border: none; white-space: nowrap;
+  }
+  .rowitem .v.insider { background: var(--insider); }
+  .rowitem .v.ambiguous { background: var(--ambiguous); }
+  .rowitem .v.outsider { background: var(--outsider); }
+  .rowitem .t { font-size: 13px; line-height: 1.5; flex: 1; }
+  .rowitem .t small { color: var(--sub); display: block; font-size: 11px; }
+  .rowitem .t small.note { color: var(--accent); }
+  .rowitem .t small.excerpt { color: var(--sub); }
+
+  #banner {
+    display: none; text-align: center; font-size: 12px; padding: 6px;
+    background: var(--ambiguous); color: #fff;
+  }
+  #toast {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.8); color: #fff; font-size: 13px; padding: 10px 18px;
+    border-radius: 20px; opacity: 0; transition: opacity .3s; pointer-events: none;
+    max-width: 90%; text-align: center;
+  }
+  #toast.show { opacity: 1; }
+  .spinner { margin: auto; color: var(--sub); font-size: 14px; text-align: center; line-height: 2; }
+</style>
+</head>
+<body>
+<div id="banner"></div>
+<header>
+  <h1 id="title">当事者レビュー</h1>
+  <div style="display:flex;align-items:center;gap:10px">
+    <span id="syncState"></span>
+    <div class="actions">
+      <button id="navReview">判定</button>
+      <button id="navList">一覧</button>
+      <button id="navSetup">設定</button>
+    </div>
+  </div>
+</header>
+<main>
+  <!-- 設定 -->
+  <section id="setup" class="screen">
+    <label>GitHub ユーザー名（owner）</label>
+    <input id="inOwner" autocapitalize="none" autocorrect="off" placeholder="例: octocat">
+    <label>データリポジトリ名（repo・非公開推奨）</label>
+    <input id="inRepo" autocapitalize="none" autocorrect="off" value="insider-review-data">
+    <label>ブランチ名（branch）</label>
+    <input id="inBranch" autocapitalize="none" autocorrect="off" value="main">
+    <label>アクセストークン（fine-grained PAT）</label>
+    <input id="inToken" type="password" autocapitalize="none" placeholder="github_pat_...">
+    <div class="help">
+      <b>トークンの作り方（初回のみ・スマホでOK）</b><br>
+      1. <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub のトークン作成ページ</a>を開く（要ログイン）<br>
+      2. Token name: 任意（例 insider-review）／ Expiration: 1年など<br>
+      3. Repository access: <b>Only select repositories</b> → 上記のデータリポジトリ（非公開）を選択<br>
+      4. Permissions → Repository permissions → <b>Contents: Read and write</b><br>
+      5. Generate token → 表示された <b>github_pat_...</b> をコピーして上に貼り付け<br>
+      ※ トークンはこの端末（ブラウザ）内にのみ保存され、外部には送信されません。<br>
+      ※ データリポジトリには実名・投稿者IDなどの個人情報は含まれません（コメント本文と指標のみ）。
+    </div>
+    <button class="primary" id="btnSave">保存して開始</button>
+  </section>
+
+  <!-- 判定 -->
+  <section id="review" class="screen">
+    <div id="progress"></div>
+    <div id="cardArea" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>
+  </section>
+
+  <!-- 一覧 -->
+  <section id="list" class="screen">
+    <div id="summary"></div>
+    <div id="rows"></div>
+  </section>
+</main>
+<div id="toast"></div>
+
+<script>
+"use strict";
+/* ============================================================
+   当事者レビューアプリ（GitHub Git Data API 直結・単一ファイル）
+   news_collector/docs/index.html を移植・改変
+   - 設定/トークンは localStorage（この端末のみ）
+   - 判定は pending に貯め、自動で verdicts.json へ同期（30分スロットル）
+   - #demo=1 でダミーデータ動作（API 不要・保存されない）
+   - bundle.json: [{index, comments[], channel_context, evidence[], neg[]}]（PIIなし）
+   - verdicts.json: {"<index>": {verdict, at, memo}}
+   ============================================================ */
+
+const LS_SETTINGS = "ir_settings";
+const API = "https://api.github.com";
+const VERDICTS = ["insider", "ambiguous", "outsider"];
+const VLABEL = {
+  insider: "🟢 関係者",
+  ambiguous: "🟠 保留",
+  outsider: "🔴 関係者でない",
+};
+const SYNC_MIN_INTERVAL = 30 * 60 * 1000;   // 自動同期は30分に1回まで（コミット削減）
+
+let settings = null;      // {owner, repo, branch, token}
+let demo = false;
+let allItems = {};        // 読込済み全件 index(string)→item（一覧からの判定修正で表示に使う）
+let queueViewStale = false;  // 一覧の修正画面を開いた後、判定タブを再描画するためのフラグ
+let queue = [];           // 未判定 items
+let queueIdx = 0;
+let verdicts = {};        // 同期済み {index: {verdict, at, memo}}
+let pending = {};         // 未同期 {index: {...}}
+let undoStack = [];       // [{idx, id}]
+let syncTimer = null;
+let syncing = false;
+
+/* ---------- 小道具 ---------- */
+const $ = (id) => document.getElementById(id);
+function toast(msg, ms = 2200) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._h); toast._h = setTimeout(() => t.classList.remove("show"), ms);
+}
+function b64decodeUtf8(b64) {
+  const bin = atob(b64.replace(/\n/g, ""));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder("utf-8").decode(bytes);
+}
+function b64encodeUtf8(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function nowIso() {
+  // JST 表記（端末ローカル時刻に、端末TZのオフセットをそのまま付与）
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? "+" : "-";
+  const oh = pad(Math.floor(Math.abs(off) / 60)), om = pad(Math.abs(off) % 60);
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${sign}${oh}:${om}`;
+}
+function pendingKey() { return `ir_pending_${settings ? settings.repo : "demo"}`; }
+function loadPending() { try { pending = JSON.parse(localStorage.getItem(pendingKey())) || {}; } catch { pending = {}; } }
+function savePending() { localStorage.setItem(pendingKey(), JSON.stringify(pending)); }
+function lastSyncKey() { return `ir_lastsync_${settings ? settings.repo : "demo"}`; }
+function getLastSyncAt() { return Number(localStorage.getItem(lastSyncKey())) || 0; }
+function setLastSyncAt(t) { localStorage.setItem(lastSyncKey(), String(t)); }
+
+/* ---------- GitHub API ---------- */
+async function gh(path, opts = {}) {
+  const res = await fetch(`${API}${path}`, {
+    ...opts,
+    headers: {
+      "Authorization": `Bearer ${settings.token}`,
+      "Accept": "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...(opts.headers || {}),
+    },
+  });
+  if (res.status === 404) return { notFound: true };
+  if (res.status === 401) throw new Error("トークンが無効です（設定を確認してください）");
+  if (res.status === 403) throw new Error("アクセスが拒否されました（トークンの権限を確認してください）");
+  if (!res.ok) throw new Error(`GitHub API エラー (${res.status})`);
+  return res.json();
+}
+const contentsPath = (p) => `/repos/${settings.owner}/${settings.repo}/contents/${p}`;
+
+async function fetchBundle() {
+  const file = await gh(contentsPath("bundle.json"));
+  if (file.notFound) throw new Error("bundle.json が見つかりません（データリポジトリの設定を確認してください）");
+  if (!file.content) return [];
+  const data = JSON.parse(b64decodeUtf8(file.content));
+  return Array.isArray(data) ? data : [];
+}
+async function fetchVerdicts() {
+  const file = await gh(contentsPath("verdicts.json"));
+  if (file.notFound || !file.content) { verdicts = {}; return; }
+  try { verdicts = JSON.parse(b64decodeUtf8(file.content)); }
+  catch { verdicts = {}; }
+}
+async function commitFiles(files, message) {
+  // 複数ファイルを1コミットで反映する（Git Data API）。現状は verdicts.json 単体だが、
+  // 将来の複数ファイル書き戻し（タグ一覧等）に備えて news_collector と同じ形にしておく。
+  // files: [{path, content(文字列)}]
+  const br = (settings.branch || "main").trim() || "main";
+  const base = `/repos/${settings.owner}/${settings.repo}`;
+  const ref = await gh(`${base}/git/ref/heads/${br}`);
+  const parentSha = ref.object.sha;
+  const parent = await gh(`${base}/git/commits/${parentSha}`);
+  const tree = await gh(`${base}/git/trees`, {
+    method: "POST",
+    body: JSON.stringify({
+      base_tree: parent.tree.sha,
+      tree: files.map(f => ({ path: f.path, mode: "100644", type: "blob", content: f.content })),
+    }),
+  });
+  const commit = await gh(`${base}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify({ message, tree: tree.sha, parents: [parentSha] }),
+  });
+  return gh(`${base}/git/refs/heads/${br}`, {
+    method: "PATCH",
+    body: JSON.stringify({ sha: commit.sha }),
+  });
+}
+async function pushVerdicts(force = false) {
+  if (syncing || demo) return;
+  const ids = Object.keys(pending);
+  if (ids.length === 0) { updateSyncState(); return; }
+  // 自動同期は30分に1回まで（コミット削減）。全件判定完了時と
+  // ヘッダーの「未同期」タップだけ force=true で即時送信する。
+  const wait = getLastSyncAt() + SYNC_MIN_INTERVAL - Date.now();
+  if (!force && wait > 0) { scheduleSync(wait); return; }
+  syncing = true; updateSyncState("同期中…");
+  try {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        // 最新を取得してマージ（他端末との競合にも耐える）
+        await fetchVerdicts();
+        const merged = { ...verdicts, ...pending };
+        const files = [{
+          path: "verdicts.json",
+          content: JSON.stringify(merged, null, 2),
+        }];
+        await commitFiles(files, `review: ${ids.length}件の判定を更新`);
+        verdicts = merged;
+        for (const id of ids) delete pending[id];
+        savePending();
+        setLastSyncAt(Date.now());
+        toast(`✓ 同期しました（${ids.length}件の判定）`);
+        break;
+      } catch (e) {
+        if (attempt === 2) throw e;  // ref 競合等は最新を取り直して最大3回試す
+      }
+    }
+  } catch (e) {
+    toast(`同期失敗: ${e.message}（後で自動再試行します）`, 3000);
+  } finally {
+    syncing = false; updateSyncState();
+  }
+}
+function scheduleSync(delay = 60000) {
+  // 判定直後の即時送信を避けるデバウンス。実際の送信可否は pushVerdicts 側の
+  // 30分スロットルが最終判定する（スロットル中なら残り時間で再スケジュール）
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(() => pushVerdicts(), delay);
+  updateSyncState();
+}
+
+/* ---------- 画面制御 ---------- */
+function show(name) {
+  for (const s of document.querySelectorAll(".screen")) s.classList.remove("active");
+  $(name).classList.add("active");
+}
+function updateSyncState(msg) {
+  const n = Object.keys(pending).length;
+  $("syncState").textContent = msg || (demo ? "デモ" : (n ? `未同期 ${n}件` : "同期済 ✓"));
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
+}
+function tierClass(tier) {
+  const t = String(tier || "").toUpperCase();
+  if (t === "STRONG") return "strong";
+  if (t === "MID") return "mid";
+  if (t === "WEAK") return "weak";
+  return "unknown";
+}
+function chipsRowHtml(label, arr, cls) {
+  if (!arr || !arr.length) return "";
+  return `<div class="chipsRow"><span class="label">${label}</span>${arr.map(t => `<span class="${cls}">${escapeHtml(t)}</span>`).join("")}</div>`;
+}
+function cardHtml(item, subLabel, subDisabled) {
+  const comments = item.comments || [];
+  const tier = item.channel_context || "WEAK";
+  return `
+    <div class="card">
+      <div class="meta">#${escapeHtml(String(item.index))} <span class="tier tier-${tierClass(tier)}">${escapeHtml(tier)}</span></div>
+      ${chipsRowHtml("根拠語", item.evidence, "echip")}
+      ${chipsRowHtml("除外語", item.neg, "nchip")}
+      <div class="commentsHead">コメント（${comments.length}件）</div>
+      <div class="body clamped"><ul class="commentList">${
+        comments.length
+          ? comments.map(c => `<li>${escapeHtml(c)}</li>`).join("")
+          : `<li class="empty">（コメントなし）</li>`
+      }</ul></div>
+      <button class="toggleBody">▼ 続きを読む</button>
+      <div class="spacer"></div>
+      <div class="notebox"><textarea id="noteInput" rows="2"
+        placeholder="メモ（任意）：判定理由・気づきなど"></textarea></div>
+      <div class="verdicts">
+        <button class="insider">🟢 関係者</button>
+        <button class="ambiguous">🟠 保留</button>
+        <button class="outsider">🔴 関係者でない</button>
+      </div>
+      <div class="subactions"><button id="btnSub"${subDisabled ? " disabled" : ""}>${subLabel}</button></div>
+    </div>`;
+}
+function wireCardCommon(area) {
+  // 本文（コメント一覧）が枠に収まる場合は「続きを読む」を出さない。超える場合は折り畳み＋トグル
+  // clientHeight===0 は非表示中の測定（判定不能）なのでトグルを残す（保険）
+  const bodyEl = area.querySelector(".body");
+  const toggleEl = area.querySelector(".toggleBody");
+  if (bodyEl.clientHeight > 0 && bodyEl.scrollHeight <= bodyEl.clientHeight + 2) {
+    toggleEl.style.display = "none";
+  } else {
+    toggleEl.onclick = () => {
+      const expanded = bodyEl.classList.toggle("expanded");
+      bodyEl.classList.toggle("clamped", !expanded);
+      toggleEl.textContent = expanded ? "▲ たたむ" : "▼ 続きを読む";
+    };
+  }
+}
+function renderCard() {
+  const area = $("cardArea");
+  const remaining = queue.length - queueIdx;
+  if (remaining <= 0) {
+    $("progress").textContent = "";
+    area.innerHTML = `<div class="done-box"><div class="big">🎉</div>すべて判定済みです<br>
+      <small>新しいデータは収集サイクルの後に増えます。<br>判定の修正は「一覧」から行タップ</small></div>`;
+    pushVerdicts(true);  // 全件判定完了はスロットルを待たず即同期
+    return;
+  }
+  const item = queue[queueIdx];
+  $("progress").textContent = `${queueIdx + 1} / ${queue.length} 件`;
+  area.innerHTML = cardHtml(item, "← ひとつ戻す", !undoStack.length);
+  area.querySelector(".insider").onclick = () => rate("insider");
+  area.querySelector(".ambiguous").onclick = () => rate("ambiguous");
+  area.querySelector(".outsider").onclick = () => rate("outsider");
+  area.querySelector("#btnSub").onclick = undo;
+  wireCardCommon(area);
+}
+function renderReviewEdit(id) {
+  // 一覧から開く「判定の修正」画面。既存の判定内容を事前充填して同じカードUIで編集する
+  const rec = pending[id] || verdicts[id];
+  if (!rec) return;
+  // 先に画面を表示してから描画・行数測定する（非表示中は高さ0になり
+  // 「続きを読む」の表示判定が壊れるため。順序が重要）
+  show("review");
+  queueViewStale = true;  // 判定タブに戻った時はキュー表示を再描画する
+  const item = allItems[id] || {
+    index: id, channel_context: "WEAK", evidence: [], neg: [],
+    comments: ["（本文データなし・過去の判定のみ）"],
+  };
+  const area = $("cardArea");
+  $("progress").textContent = `判定の修正（現在: ${VLABEL[rec.verdict] || rec.verdict}）`;
+  area.innerHTML = cardHtml(item, "一覧に戻る（変更しない）", false);
+  $("noteInput").value = rec.memo || "";
+  wireCardCommon(area);
+  const save = (verdict) => {
+    const rec2 = { verdict, at: nowIso() };
+    const memo = $("noteInput").value.trim();
+    if (memo) rec2.memo = memo;
+    pending[id] = rec2;
+    savePending();
+    scheduleSync();
+    toast("更新しました");
+    backToList();
+  };
+  area.querySelector(".insider").onclick = () => save("insider");
+  area.querySelector(".ambiguous").onclick = () => save("ambiguous");
+  area.querySelector(".outsider").onclick = () => save("outsider");
+  area.querySelector("#btnSub").onclick = backToList;
+}
+function backToList() {
+  renderList();
+  show("list");
+  // 判定タブのキュー表示は、次に判定タブを開いた時（表示状態）に再描画する
+  // （非表示のまま renderCard すると行数測定が壊れるため queueViewStale で遅延）
+}
+function rate(verdict) {
+  const item = queue[queueIdx];
+  const id = String(item.index);
+  const noteEl = $("noteInput");
+  const memo = noteEl ? noteEl.value.trim() : "";
+  const rec = { verdict, at: nowIso() };
+  if (memo) rec.memo = memo;  // 判断基準・理由の蓄積（下流の選定基準改善に使う）
+  pending[id] = rec;
+  savePending();
+  undoStack.push({ idx: queueIdx, id });
+  queueIdx++;
+  scheduleSync();
+  renderCard();
+}
+function undo() {
+  const last = undoStack.pop();
+  if (!last) return;
+  const prev = pending[last.id];
+  delete pending[last.id];
+  savePending();
+  queueIdx = last.idx;
+  scheduleSync();
+  renderCard();
+  if (prev && prev.memo && $("noteInput")) $("noteInput").value = prev.memo;
+}
+
+function renderList() {
+  const all = { ...verdicts, ...pending };
+  const counts = { insider: 0, ambiguous: 0, outsider: 0 };
+  const entries = Object.entries(all).sort((a, b) => (b[1].at || "").localeCompare(a[1].at || ""));
+  for (const [, r] of entries) if (counts[r.verdict] !== undefined) counts[r.verdict]++;
+  $("summary").innerHTML = VERDICTS.map(v => `<div class="chip">${VLABEL[v]}<b>${counts[v]}</b></div>`).join("");
+  $("rows").innerHTML = entries.map(([id, r]) => {
+    const item = allItems[id];
+    const tier = item ? item.channel_context : null;
+    const excerpt = item && item.comments && item.comments.length ? item.comments[0] : "";
+    const excerptShort = excerpt.length > 60 ? excerpt.slice(0, 60) + "…" : excerpt;
+    return `
+    <div class="rowitem" data-id="${id}">
+      <button class="v ${r.verdict}">${VLABEL[r.verdict] || r.verdict}</button>
+      <div class="t">#${escapeHtml(id)}${tier ? ` <span class="tier tier-${tierClass(tier)}">${escapeHtml(tier)}</span>` : ""}
+        <small>${(r.at || "").slice(0, 16).replace("T", " ")}${id in pending ? "・未同期" : ""}</small>
+        ${excerptShort ? `<small class="excerpt">${escapeHtml(excerptShort)}</small>` : ""}
+        ${r.memo ? `<small class="note">✎ ${escapeHtml(r.memo)}</small>` : ""}
+      </div>
+    </div>`;
+  }).join("") || `<div class="spinner">まだ判定がありません</div>`;
+  for (const btn of $("rows").querySelectorAll(".v")) {
+    btn.onclick = (e) => {
+      const row = e.target.closest(".rowitem");
+      const id = row.dataset.id;
+      const cur = (pending[id] || verdicts[id]);
+      const next = VERDICTS[(VERDICTS.indexOf(cur.verdict) + 1) % VERDICTS.length];
+      pending[id] = { ...cur, verdict: next, at: nowIso() };
+      savePending();
+      scheduleSync();
+      renderList();
+    };
+  }
+  // タイトル部分のタップで判定画面（修正モード）を開く
+  for (const t of $("rows").querySelectorAll(".t")) {
+    t.onclick = (e) => {
+      const id = e.target.closest(".rowitem").dataset.id;
+      renderReviewEdit(id);
+    };
+  }
+}
+
+/* ---------- 起動 ---------- */
+function parseHash() {
+  const h = {};
+  for (const kv of location.hash.replace(/^#/, "").split("&")) {
+    const [k, v] = kv.split("=");
+    if (k) h[decodeURIComponent(k)] = decodeURIComponent(v || "");
+  }
+  return h;
+}
+function demoItems() {
+  return [
+    {
+      index: 0, channel_context: "STRONG", evidence: ["うちの店", "仕入れ"], neg: [],
+      comments: [
+        "これはデモコメントです。うちの店でもよくある悩みですね、仕入れ値の話は特に。",
+        "うちも同じです（デモ）。原価率の管理が本当に大変。",
+      ],
+    },
+    {
+      index: 1, channel_context: "MID", evidence: ["お客さん"], neg: ["聞いた話"],
+      comments: [
+        "デモコメント：お客さんからよく聞かれます。",
+        "でもこれは友人から聞いた話なので、詳しくは分かりません（デモ）。",
+        "3件目のデモコメントです。もう少し長めの文章にして、折り返し表示の確認をしています。読みやすさをチェックする目的のダミーテキストです。",
+      ],
+    },
+    {
+      index: 2, channel_context: "WEAK", evidence: [], neg: ["ニュースで見た"],
+      comments: [
+        "デモコメント：一般的な感想です。",
+        "特に当事者性を感じさせる記述はありません（デモ）。ニュースで見ただけの話です。",
+      ],
+    },
+  ];
+}
+async function start() {
+  loadPending();
+  updateSyncState();
+  show("review");
+  $("cardArea").innerHTML = `<div class="spinner">データを読み込み中…</div>`;
+  try {
+    let items;
+    if (demo) {
+      items = demoItems();
+      verdicts = {};
+    } else {
+      await fetchVerdicts();
+      items = await fetchBundle();
+    }
+    allItems = {};
+    for (const i of items) allItems[String(i.index)] = i;
+    const rated = new Set([...Object.keys(verdicts), ...Object.keys(pending)]);
+    queue = items.filter(i => !rated.has(String(i.index)))
+                 .sort((a, b) => a.index - b.index);
+    queueIdx = 0;
+    undoStack = [];
+    renderCard();
+    if (!demo && Object.keys(pending).length) scheduleSync(1000);
+  } catch (e) {
+    $("cardArea").innerHTML = `<div class="spinner">⚠ ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function init() {
+  const hash = parseHash();
+  demo = hash.demo === "1";
+  if (demo) {
+    $("banner").style.display = "block";
+    $("banner").textContent = "デモモード（判定は保存されません）";
+    settings = { owner: "", repo: "demo", branch: "main", token: "" };
+    start();
+  } else {
+    try { settings = JSON.parse(localStorage.getItem(LS_SETTINGS)); } catch { settings = null; }
+    // URL ハッシュで owner/repo/branch を事前充填（PAT は充填しない）
+    if (hash.owner) $("inOwner").value = hash.owner;
+    if (hash.repo) $("inRepo").value = hash.repo;
+    if (hash.branch) $("inBranch").value = hash.branch;
+    if (settings && settings.token) {
+      $("inOwner").value = settings.owner; $("inRepo").value = settings.repo;
+      $("inBranch").value = settings.branch || "main"; $("inToken").value = settings.token;
+      start();
+    } else {
+      show("setup");
+    }
+  }
+  $("navReview").onclick = () => {
+    show("review");
+    if (queueViewStale) { queueViewStale = false; renderCard(); }  // 表示してから描画（行数測定のため）
+  };
+  $("navList").onclick = () => { renderList(); show("list"); };
+  $("navSetup").onclick = () => { show("setup"); };
+  $("btnSave").onclick = () => {
+    const s = {
+      owner: $("inOwner").value.trim(),
+      repo: $("inRepo").value.trim() || "insider-review-data",
+      branch: $("inBranch").value.trim() || "main",
+      token: $("inToken").value.trim(),
+    };
+    if (!s.owner || !s.repo || !s.token) { toast("owner・repo・トークンを入力してください"); return; }
+    settings = s;
+    localStorage.setItem(LS_SETTINGS, JSON.stringify(s));
+    toast("保存しました");
+    start();
+  };
+  // ハッシュ変更（#demo=1 の付け外し等）は再読込して init からやり直す
+  window.addEventListener("hashchange", () => location.reload());
+  // 画面復帰・オンライン復帰時に未同期分を送る
+  window.addEventListener("online", () => scheduleSync(500));
+  document.addEventListener("visibilitychange", () => {
+    if (!Object.keys(pending).length) return;
+    if (document.visibilityState === "visible") scheduleSync(500);
+    else pushVerdicts();  // アプリを離れる時は待たずに送信（失敗しても pending に残る）
+  });
+  // ヘッダーの同期表示をタップで即時同期（スロットル無視）
+  $("syncState").style.cursor = "pointer";
+  $("syncState").onclick = () => { if (Object.keys(pending).length) { clearTimeout(syncTimer); pushVerdicts(true); } };
+}
+init();
+</script>
+</body>
+</html>
