@@ -218,7 +218,7 @@
     <label>GitHub ユーザー名（owner）</label>
     <input id="inOwner" autocapitalize="none" autocorrect="off" placeholder="例: octocat">
     <label>データリポジトリ名（repo・非公開推奨）</label>
-    <input id="inRepo" autocapitalize="none" autocorrect="off" value="insider-review-data">
+    <input id="inRepo" autocapitalize="none" autocorrect="off" value="owner-chef-triage-data">
     <label>ブランチ名（branch）</label>
     <input id="inBranch" autocapitalize="none" autocorrect="off" value="main">
     <label>アクセストークン（fine-grained PAT）</label>
@@ -863,7 +863,7 @@ function init() {
   $("btnSave").onclick = () => {
     const s = {
       owner: $("inOwner").value.trim(),
-      repo: $("inRepo").value.trim() || "insider-review-data",
+      repo: $("inRepo").value.trim() || "owner-chef-triage-data",
       branch: $("inBranch").value.trim() || "main",
       token: $("inToken").value.trim(),
     };
