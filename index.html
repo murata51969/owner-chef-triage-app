@@ -64,13 +64,15 @@
   }
 
   /* --- 判定画面 --- */
-  #progress { font-size: 12px; color: var(--sub); text-align: center; margin-bottom: 8px; }
+  #progressRow { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 8px; }
+  #progress { font-size: 12px; color: var(--sub); text-align: center; flex: 1; }
   .card {
     flex: 1; display: flex; flex-direction: column; background: var(--card);
-    border: 1px solid var(--line); border-radius: 16px; padding: 16px; overflow: hidden;
+    border: 1px solid var(--line); border-radius: 16px; padding: 16px 10px; overflow: hidden;
     min-height: 0;
   }
   .card .meta { font-size: 13px; color: var(--sub); margin-bottom: 6px; }
+  .card .meta a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
   .tier {
     display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 11px;
     font-weight: 700; color: #fff; vertical-align: middle; margin-left: 4px;
@@ -79,7 +81,7 @@
   .tier-mid { background: #d97706; }
   .tier-weak, .tier-unknown { background: #6b7280; }
   .chipsRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
-  .chipsRow .label { font-size: 11px; color: var(--sub); width: 100%; margin-bottom: 2px; }
+  .chipsRow .label { font-size: 11px; color: var(--sub); flex-shrink: 0; margin-right: 2px; white-space: nowrap; }
   .echip, .nchip {
     padding: 4px 10px; font-size: 12px; border-radius: 999px; border: 1px solid;
   }
@@ -91,14 +93,14 @@
   }
   .commentsHead { font-size: 12px; color: var(--sub); margin: 12px 0 4px; font-weight: 600; }
   .card .body {
-    font-size: 14.5px; line-height: 1.7; color: var(--text);
+    font-size: 14.5px; line-height: 1.6; color: var(--text);
     -webkit-overflow-scrolling: touch; padding-bottom: 4px;
   }
   .card .body.clamped { flex: 0 0 auto; max-height: 230px; overflow: hidden; }
   .card .body.expanded { flex: 1 1 auto; overflow-y: auto; min-height: 0; max-height: none; }
   .commentList { list-style: none; }
   .commentList li {
-    padding: 9px 11px; margin-bottom: 7px; background: var(--bg); border-radius: 9px;
+    padding: 9px 8px; margin-bottom: 7px; background: var(--bg); border-radius: 9px;
     white-space: pre-wrap; word-break: break-word;
   }
   .commentList li.empty { color: var(--sub); text-align: center; background: none; }
@@ -154,10 +156,11 @@
   .verdicts .insider    { background: var(--insider); }
   .verdicts .ambiguous  { background: var(--ambiguous); }
   .verdicts .outsider   { background: var(--outsider); }
-  .subactions { display: flex; justify-content: center; margin-top: 10px; }
-  .subactions button {
-    font-size: 13px; color: var(--sub); background: transparent; border: none; padding: 8px 16px;
+  #progressRow #btnSub, #progressRow #btnSkip {
+    font-size: 13px; color: var(--sub); background: transparent; border: none;
+    padding: 8px 12px; white-space: nowrap; flex-shrink: 0; touch-action: manipulation;
   }
+  #progressRow #btnSub:disabled, #progressRow #btnSkip:disabled { opacity: .4; }
   .done-box { text-align: center; margin: auto; color: var(--sub); font-size: 14px; line-height: 2; }
   .done-box .big { font-size: 40px; }
 
@@ -238,7 +241,11 @@
 
   <!-- 判定 -->
   <section id="review" class="screen">
-    <div id="progress"></div>
+    <div id="progressRow">
+      <button id="btnSub"></button>
+      <div id="progress"></div>
+      <button id="btnSkip"></button>
+    </div>
     <div id="cardArea" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>
   </section>
 
@@ -258,10 +265,10 @@
    - 設定/トークンは localStorage（この端末のみ）
    - 判定は pending に貯め、自動で verdicts.json へ同期（30分スロットル）
    - #demo=1 でダミーデータ動作（API 不要・保存されない）
-   - bundle.json: [{index, author_name?, comments[](string|{text,channel,video_title}),
+   - bundle.json: [{index, author_name?, author_id?, comments[](string|{text,channel,video_title}),
                     channel_context, evidence[], neg[]}]
-     （author_name は現状のexport pipeline(review_export.py)ではPIIキー扱いで書き出しをabortするため
-       実運用では入らない想定。将来的にpipeline側を見直す場合のための表示対応のみ先行実装）
+     （author_name/author_id は review_export.py の許可キー。YouTube上の公開情報であり、
+       送信先が本人のみアクセス可能なprivateリポ限定のため許容＝ユーザー判断・2026-07-14）
    - verdicts.json: {"<index>": {verdict, at, memo, gyotai:[], tags:[]}}
    - tags.json: {"業態":[...], "タグ":[...]}（無ければ既定値で動作。news_collectorと同一機構）
    ============================================================ */
@@ -555,12 +562,25 @@ function markTags(area, rec) {
       for (const chip of area.querySelectorAll(`.taggroup[data-group="${g}"] .tagchip`))
         if (arr.includes(chip.textContent)) chip.classList.add("on");
 }
-function cardHtml(item, subLabel, subDisabled) {
+function setNavButton(id, label, disabled, onClick) {
+  // ナビ行（#progressRow）の左右ボタン共通処理。「← 戻す」(btnSub)・「進む →」(btnSkip)で共用
+  const btn = $(id);
+  if (!label) { btn.style.display = "none"; return; }
+  btn.style.display = "";
+  btn.textContent = label;
+  btn.disabled = !!disabled;
+  btn.onclick = onClick;
+}
+function setSubButton(label, disabled, onClick) { setNavButton("btnSub", label, disabled, onClick); }
+function setSkipButton(label, disabled, onClick) { setNavButton("btnSkip", label, disabled, onClick); }
+function cardHtml(item) {
   const comments = item.comments || [];
   const tier = item.channel_context || "WEAK";
-  // author_name があればカードヘッダに表示（例:「@名前」）。無ければ従来どおり「#<index>」
-  // author_id は表示・保持ともに一切行わない
-  const idLabel = item.author_name ? `@${escapeHtml(item.author_name)}` : `#${escapeHtml(String(item.index))}`;
+  // author_name があればカードヘッダに表示（例:「@名前」）。author_id があればYouTubeチャンネルへのリンクにする（新規タブ）
+  const idText = item.author_name ? `@${escapeHtml(item.author_name)}` : `#${escapeHtml(String(item.index))}`;
+  const idLabel = item.author_id
+    ? `<a href="https://www.youtube.com/channel/${encodeURIComponent(item.author_id)}" target="_blank" rel="noopener">${idText}</a>`
+    : idText;
   return `
     <div class="card">
       <div class="meta">${idLabel} <span class="tier tier-${tierClass(tier)}">${escapeHtml(tier)}</span></div>
@@ -583,7 +603,6 @@ function cardHtml(item, subLabel, subDisabled) {
         <button class="ambiguous">🟠 保留</button>
         <button class="outsider">🔴 関係者でない</button>
       </div>
-      <div class="subactions"><button id="btnSub"${subDisabled ? " disabled" : ""}>${subLabel}</button></div>
     </div>`;
 }
 function wireCardCommon(area) {
@@ -622,6 +641,8 @@ function renderCard() {
   const remaining = queue.length - queueIdx;
   if (remaining <= 0) {
     $("progress").textContent = "";
+    setSubButton("", true, null);
+    setSkipButton("", true, null);
     area.innerHTML = `<div class="done-box"><div class="big">🎉</div>すべて判定済みです<br>
       <small>新しいデータは収集サイクルの後に増えます。<br>判定の修正は「一覧」から行タップ</small></div>`;
     pushVerdicts(true);  // 全件判定完了はスロットルを待たず即同期
@@ -629,11 +650,12 @@ function renderCard() {
   }
   const item = queue[queueIdx];
   $("progress").textContent = `${queueIdx + 1} / ${queue.length} 件`;
-  area.innerHTML = cardHtml(item, "← ひとつ戻す", !undoStack.length);
+  setSubButton("← 戻す", !undoStack.length, undo);
+  setSkipButton("進む →", queueIdx + 1 >= queue.length, skip);
+  area.innerHTML = cardHtml(item);
   area.querySelector(".insider").onclick = () => rate("insider");
   area.querySelector(".ambiguous").onclick = () => rate("ambiguous");
   area.querySelector(".outsider").onclick = () => rate("outsider");
-  area.querySelector("#btnSub").onclick = undo;
   wireCardCommon(area);
 }
 function renderReviewEdit(id) {
@@ -650,7 +672,9 @@ function renderReviewEdit(id) {
   };
   const area = $("cardArea");
   $("progress").textContent = `判定の修正（現在: ${VLABEL[rec.verdict] || rec.verdict}）`;
-  area.innerHTML = cardHtml(item, "一覧に戻る（変更しない）", false);
+  setSubButton("一覧に戻る（変更しない）", false, backToList);
+  setSkipButton("", true, null);  // 修正画面ではスキップ操作は不要
+  area.innerHTML = cardHtml(item);
   $("noteInput").value = rec.memo || "";
   markTags(area, rec);
   wireCardCommon(area);
@@ -670,13 +694,19 @@ function renderReviewEdit(id) {
   area.querySelector(".insider").onclick = () => save("insider");
   area.querySelector(".ambiguous").onclick = () => save("ambiguous");
   area.querySelector(".outsider").onclick = () => save("outsider");
-  area.querySelector("#btnSub").onclick = backToList;
 }
 function backToList() {
   renderList();
   show("list");
   // 判定タブのキュー表示は、次に判定タブを開いた時（表示状態）に再描画する
   // （非表示のまま renderCard すると行数測定が壊れるため queueViewStale で遅延）
+}
+function skip() {
+  // 判定せず次の未判定へ進む（現在の並び順で queueIdx+1）。undoStack には積まない
+  // （「戻す」は判定の取り消し専用のため。スキップした件は一覧・再巡回から戻れる）
+  if (queueIdx + 1 >= queue.length) return;
+  queueIdx++;
+  renderCard();
 }
 function rate(verdict) {
   const item = queue[queueIdx];
@@ -772,7 +802,8 @@ function parseHash() {
 function demoItems() {
   return [
     {
-      index: 0, author_name: "居酒屋たなか", channel_context: "STRONG", evidence: ["うちの店", "仕入れ"], neg: [],
+      index: 0, author_name: "居酒屋たなか", author_id: "UC_demo000000000000000",
+      channel_context: "STRONG", evidence: ["うちの店", "仕入れ"], neg: [],
       comments: [
         { text: "これはデモコメントです。うちの店でもよくある悩みですね、仕入れ値の話は特に。",
           channel: "居酒屋チャンネル（デモ）", video_title: "原価率の見直し方（デモ動画）" },
