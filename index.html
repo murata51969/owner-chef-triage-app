@@ -298,7 +298,6 @@ let queue = [];           // 未判定 items
 let queueIdx = 0;
 let verdicts = {};        // 同期済み {index: {verdict, at, memo, gyotai, tags}}
 let pending = {};         // 未同期 {index: {...}}
-let undoStack = [];       // [{idx, id}]
 let syncTimer = null;
 let syncing = false;
 
@@ -650,7 +649,7 @@ function renderCard() {
   }
   const item = queue[queueIdx];
   $("progress").textContent = `${queueIdx + 1} / ${queue.length} 件`;
-  setSubButton("← 戻す", !undoStack.length, undo);
+  setSubButton("← 戻す", queueIdx <= 0, undo);
   setSkipButton("進む →", queueIdx + 1 >= queue.length, skip);
   area.innerHTML = cardHtml(item);
   area.querySelector(".insider").onclick = () => rate("insider");
@@ -702,8 +701,7 @@ function backToList() {
   // （非表示のまま renderCard すると行数測定が壊れるため queueViewStale で遅延）
 }
 function skip() {
-  // 判定せず次の未判定へ進む（現在の並び順で queueIdx+1）。undoStack には積まない
-  // （「戻す」は判定の取り消し専用のため。スキップした件は一覧・再巡回から戻れる）
+  // 判定せず次の未判定へ進む（現在の並び順で queueIdx+1）
   if (queueIdx + 1 >= queue.length) return;
   queueIdx++;
   renderCard();
@@ -721,19 +719,23 @@ function rate(verdict) {
   if (tags.length) rec.tags = tags;
   pending[id] = rec;
   savePending();
-  undoStack.push({ idx: queueIdx, id });
   queueIdx++;
   scheduleSync();
   renderCard();
 }
 function undo() {
-  const last = undoStack.pop();
-  if (!last) return;
-  const prev = pending[last.id];
-  delete pending[last.id];
-  savePending();
-  queueIdx = last.idx;
-  scheduleSync();
+  // 「戻す」は1つ前のカードに戻る（判定済みならその判定を取り消し、
+  // スキップ済みなら未判定のまま再表示する）
+  if (queueIdx <= 0) return;
+  queueIdx--;
+  const item = queue[queueIdx];
+  const id = String(item.index);
+  const prev = pending[id];
+  if (prev) {
+    delete pending[id];
+    savePending();
+    scheduleSync();
+  }
   renderCard();
   if (prev && prev.memo && $("noteInput")) $("noteInput").value = prev.memo;
   if (prev) {
@@ -855,7 +857,6 @@ async function start() {
     queue = items.filter(i => !rated.has(String(i.index)))
                  .sort((a, b) => a.index - b.index);
     queueIdx = 0;
-    undoStack = [];
     renderCard();
     if (!demo && Object.keys(pending).length) scheduleSync(1000);
   } catch (e) {
