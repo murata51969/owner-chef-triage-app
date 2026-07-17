@@ -269,8 +269,10 @@
                     channel_context, evidence[], neg[]}]
      （author_name/author_id は review_export.py の許可キー。YouTube上の公開情報であり、
        送信先が本人のみアクセス可能なprivateリポ限定のため許容＝ユーザー判断・2026-07-14）
-   - verdicts.json: {"<index>": {verdict, at, memo, gyotai:[], tags:[]}}
-   - tags.json: {"業態":[...], "タグ":[...]}（無ければ既定値で動作。news_collectorと同一機構）
+   - verdicts.json: {"<index>": {verdict, at, memo, gyotai:[], tags:[], role:[]}}
+   - tags.json: {"業態":[...], "タグ":[...], "役割":[...]}（無ければ既定値で動作。news_collectorと同一機構）
+     役割チップは購買決定権の区別用（insider_rubric.md「役割セグメント」参照。owner/prospect/other_insiderの
+     粗い自動集約とは別に、人手が直接ラベルできる自由入力チップとして提供する）
    ============================================================ */
 
 const LS_SETTINGS = "ir_settings";
@@ -286,12 +288,13 @@ const SYNC_MIN_INTERVAL = 30 * 60 * 1000;   // 自動同期は30分に1回まで
 const DEFAULT_TAGS = {
   gyotai: ["居酒屋", "和食", "寿司", "うどん・そば", "ラーメン", "中華", "カフェ", "焼肉", "焼鳥", "バー", "洋食", "その他"],
   tags: ["店主", "料理人・調理師", "従業員", "開業準備", "元飲食", "家族"],
+  role: ["店主・経営者", "開業検討", "雇われ店長", "料理人・職人", "従業員", "家族"],
 };
 
 let settings = null;      // {owner, repo, branch, token}
 let demo = false;
-let tagOptions = { gyotai: [], tags: [] };  // tags.json（業態/タグの2区分）
-let newTags = { gyotai: [], tags: [] };     // 自由入力で追加され tags.json 未反映のもの
+let tagOptions = { gyotai: [], tags: [], role: [] };  // tags.json（業態/タグ/役割の3区分）
+let newTags = { gyotai: [], tags: [], role: [] };     // 自由入力で追加され tags.json 未反映のもの
 let allItems = {};        // 読込済み全件 index(string)→item（一覧からの判定修正で表示に使う）
 let queueViewStale = false;  // 一覧の修正画面を開いた後、判定タブを再描画するためのフラグ
 let queue = [];           // 未判定 items
@@ -334,8 +337,8 @@ function loadPending() { try { pending = JSON.parse(localStorage.getItem(pending
 function savePending() { localStorage.setItem(pendingKey(), JSON.stringify(pending)); }
 function newTagsKey() { return `ir_newtags_${settings ? settings.repo : "demo"}`; }
 function loadNewTags() {
-  try { newTags = JSON.parse(localStorage.getItem(newTagsKey())) || { gyotai: [], tags: [] }; }
-  catch { newTags = { gyotai: [], tags: [] }; }
+  try { newTags = JSON.parse(localStorage.getItem(newTagsKey())) || { gyotai: [], tags: [], role: [] }; }
+  catch { newTags = { gyotai: [], tags: [], role: [] }; }
 }
 function saveNewTags() { localStorage.setItem(newTagsKey(), JSON.stringify(newTags)); }
 function lastSyncKey() { return `ir_lastsync_${settings ? settings.repo : "demo"}`; }
@@ -375,19 +378,23 @@ async function fetchVerdicts() {
   catch { verdicts = {}; }
 }
 function normalizeTagData(data) {
-  // 新形式 {"業態": [...], "タグ": [...]}。旧形式（配列）は「タグ」として解釈
+  // 新形式 {"業態": [...], "タグ": [...], "役割": [...]}。旧形式（配列）は「タグ」として解釈
   const clean = (a) => Array.isArray(a) ? a.filter(t => typeof t === "string" && t) : [];
-  if (Array.isArray(data)) return { gyotai: [], tags: clean(data) };
+  if (Array.isArray(data)) return { gyotai: [], tags: clean(data), role: [] };
   if (data && typeof data === "object")
-    return { gyotai: clean(data["業態"] ?? data.gyotai), tags: clean(data["タグ"] ?? data.tags) };
-  return { gyotai: [], tags: [] };
+    return {
+      gyotai: clean(data["業態"] ?? data.gyotai),
+      tags: clean(data["タグ"] ?? data.tags),
+      role: clean(data["役割"] ?? data.role),
+    };
+  return { gyotai: [], tags: [], role: [] };
 }
 async function fetchTags() {
   // タグ選択肢はデータリポ直下 tags.json で管理（無ければ既定値で動作）
   const file = await gh(contentsPath("tags.json"));
-  if (file.notFound || !file.content) return { gyotai: [...DEFAULT_TAGS.gyotai], tags: [...DEFAULT_TAGS.tags] };
+  if (file.notFound || !file.content) return { gyotai: [...DEFAULT_TAGS.gyotai], tags: [...DEFAULT_TAGS.tags], role: [...DEFAULT_TAGS.role] };
   try { return normalizeTagData(JSON.parse(b64decodeUtf8(file.content))); }
-  catch { return { gyotai: [...DEFAULT_TAGS.gyotai], tags: [...DEFAULT_TAGS.tags] }; }
+  catch { return { gyotai: [...DEFAULT_TAGS.gyotai], tags: [...DEFAULT_TAGS.tags], role: [...DEFAULT_TAGS.role] }; }
 }
 async function commitFiles(files, message) {
   // 複数ファイルを1コミットで反映する（Git Data API）。現状は verdicts.json 単体だが、
@@ -417,7 +424,7 @@ async function commitFiles(files, message) {
 async function pushVerdicts(force = false) {
   if (syncing || demo) return;
   const ids = Object.keys(pending);
-  const hasNewTags = newTags.gyotai.length || newTags.tags.length;
+  const hasNewTags = newTags.gyotai.length || newTags.tags.length || newTags.role.length;
   if (ids.length === 0 && !hasNewTags) { updateSyncState(); return; }
   // 自動同期は30分に1回まで（コミット削減）。全件判定完了時と
   // ヘッダーの「未同期」タップだけ force=true で即時送信する。
@@ -440,6 +447,7 @@ async function pushVerdicts(force = false) {
           mergedTags = {
             "業態": [...new Set([...remote.gyotai, ...newTags.gyotai])],
             "タグ": [...new Set([...remote.tags, ...newTags.tags])],
+            "役割": [...new Set([...remote.role, ...newTags.role])],
           };
           files.push({
             path: "tags.json",
@@ -454,8 +462,8 @@ async function pushVerdicts(force = false) {
         for (const id of ids) delete pending[id];
         savePending();
         if (mergedTags) {
-          tagOptions = { gyotai: mergedTags["業態"], tags: mergedTags["タグ"] };
-          newTags = { gyotai: [], tags: [] };
+          tagOptions = { gyotai: mergedTags["業態"], tags: mergedTags["タグ"], role: mergedTags["役割"] };
+          newTags = { gyotai: [], tags: [], role: [] };
           saveNewTags();
         }
         setLastSyncAt(Date.now());
@@ -556,7 +564,7 @@ function pickTags(area, group) {
   return [...area.querySelectorAll(`.taggroup[data-group="${group}"] .tagchip.on`)].map(c => c.textContent);
 }
 function markTags(area, rec) {
-  for (const [g, arr] of [["gyotai", rec.gyotai], ["tags", rec.tags]])
+  for (const [g, arr] of [["gyotai", rec.gyotai], ["tags", rec.tags], ["role", rec.role]])
     if (arr)
       for (const chip of area.querySelectorAll(`.taggroup[data-group="${g}"] .tagchip`))
         if (arr.includes(chip.textContent)) chip.classList.add("on");
@@ -595,6 +603,7 @@ function cardHtml(item) {
       <div class="spacer"></div>
       ${tagSectionHtml("業態", "gyotai")}
       ${tagSectionHtml("タグ", "tags")}
+      ${tagSectionHtml("役割", "role")}
       <div class="notebox"><textarea id="noteInput" rows="2"
         placeholder="メモ（任意）：判定理由・気づきなど"></textarea></div>
       <div class="verdicts">
@@ -681,9 +690,10 @@ function renderReviewEdit(id) {
     const rec2 = { verdict, at: nowIso() };
     const memo = $("noteInput").value.trim();
     if (memo) rec2.memo = memo;
-    const gyotai = pickTags(area, "gyotai"), tags = pickTags(area, "tags");
+    const gyotai = pickTags(area, "gyotai"), tags = pickTags(area, "tags"), role = pickTags(area, "role");
     if (gyotai.length) rec2.gyotai = gyotai;
     if (tags.length) rec2.tags = tags;
+    if (role.length) rec2.role = role;
     pending[id] = rec2;
     savePending();
     scheduleSync();
@@ -714,9 +724,10 @@ function rate(verdict) {
   const memo = noteEl ? noteEl.value.trim() : "";
   const rec = { verdict, at: nowIso() };
   if (memo) rec.memo = memo;  // 判断基準・理由の蓄積（下流の選定基準改善に使う）
-  const gyotai = pickTags(area, "gyotai"), tags = pickTags(area, "tags");
+  const gyotai = pickTags(area, "gyotai"), tags = pickTags(area, "tags"), role = pickTags(area, "role");
   if (gyotai.length) rec.gyotai = gyotai;
   if (tags.length) rec.tags = tags;
+  if (role.length) rec.role = role;
   pending[id] = rec;
   savePending();
   queueIdx++;
@@ -740,7 +751,7 @@ function undo() {
   if (prev && prev.memo && $("noteInput")) $("noteInput").value = prev.memo;
   if (prev) {
     const area = $("cardArea");
-    for (const [g, arr] of [["gyotai", prev.gyotai], ["tags", prev.tags]])
+    for (const [g, arr] of [["gyotai", prev.gyotai], ["tags", prev.tags], ["role", prev.role]])
       if (arr)
         for (const chip of area.querySelectorAll(`.taggroup[data-group="${g}"] .tagchip`))
           if (arr.includes(chip.textContent)) chip.classList.add("on");
@@ -767,6 +778,7 @@ function renderList() {
         ${excerptShort ? `<small class="excerpt">${escapeHtml(excerptShort)}</small>` : ""}
         ${(r.gyotai && r.gyotai.length) ? `<small class="tags">🏪 ${r.gyotai.map(escapeHtml).join("・")}</small>` : ""}
         ${(r.tags && r.tags.length) ? `<small class="tags">🏷 ${r.tags.map(escapeHtml).join("・")}</small>` : ""}
+        ${(r.role && r.role.length) ? `<small class="tags">🧑‍🍳 ${r.role.map(escapeHtml).join("・")}</small>` : ""}
         ${r.memo ? `<small class="note">✎ ${escapeHtml(r.memo)}</small>` : ""}
       </div>
     </div>`;
@@ -845,7 +857,7 @@ async function start() {
     if (demo) {
       items = demoItems();
       verdicts = {};
-      tagOptions = { gyotai: [...DEFAULT_TAGS.gyotai], tags: [...DEFAULT_TAGS.tags] };
+      tagOptions = { gyotai: [...DEFAULT_TAGS.gyotai], tags: [...DEFAULT_TAGS.tags], role: [...DEFAULT_TAGS.role] };
     } else {
       await fetchVerdicts();
       tagOptions = await fetchTags();
