@@ -708,7 +708,7 @@ function skip() {
 }
 function rate(verdict) {
   const item = queue[queueIdx];
-  const id = String(item.index);
+  const id = item.author_id || String(item.index);
   const area = $("cardArea");
   const noteEl = $("noteInput");
   const memo = noteEl ? noteEl.value.trim() : "";
@@ -729,7 +729,7 @@ function undo() {
   if (queueIdx <= 0) return;
   queueIdx--;
   const item = queue[queueIdx];
-  const id = String(item.index);
+  const id = item.author_id || String(item.index);
   const prev = pending[id];
   if (prev) {
     delete pending[id];
@@ -852,9 +852,9 @@ async function start() {
       items = await fetchBundle();
     }
     allItems = {};
-    for (const i of items) allItems[String(i.index)] = i;
+    for (const i of items) allItems[i.author_id || String(i.index)] = i;
     const rated = new Set([...Object.keys(verdicts), ...Object.keys(pending)]);
-    queue = items.filter(i => !rated.has(String(i.index)))
+    queue = items.filter(i => !rated.has(i.author_id || String(i.index)))
                  .sort((a, b) => a.index - b.index);
     queueIdx = 0;
     renderCard();
