@@ -311,7 +311,7 @@ const SYNC_MIN_INTERVAL = 30 * 60 * 1000;   // 自動同期は30分に1回まで
 // employee/family）。「元飲食」は決定権区分ではない背景属性のため「タグ」に残す。
 const DEFAULT_TAGS = {
   gyotai: ["居酒屋", "和食", "寿司", "うどん・そば", "ラーメン", "中華", "カフェ", "焼肉", "焼鳥", "バー", "洋食", "その他"],
-  tags: ["元飲食"],
+  tags: [],  // 2026-07-18 ユーザー判断: 当面は「業態」「役割」の2グループのみ運用（tagsは非表示・データ機構は温存）
   role: ["店主・経営者", "開業検討", "雇われ店長", "料理人・職人", "従業員", "家族"],
 };
 
@@ -625,7 +625,6 @@ function cardHtml(item) {
       }</ul></div>
       <button class="toggleBody">▼ 続きを読む</button>
       ${tagSectionHtml("業態", "gyotai")}
-      ${tagSectionHtml("タグ", "tags")}
       ${tagSectionHtml("役割", "role")}
       <div class="notebox"><textarea id="noteInput" rows="2"
         placeholder="メモ（任意）：判定理由・気づきなど"></textarea></div>
