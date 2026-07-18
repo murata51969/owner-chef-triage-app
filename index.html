@@ -63,13 +63,21 @@
     color: #fff; background: var(--accent); border: none; border-radius: 12px;
   }
 
-  /* --- 判定画面 --- */
-  #progressRow { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 8px; }
+  /* --- 判定画面 ---
+     2026-07-18 UX改善#1: 3択ボタンは画面下部の固定アクションバー(#actionBar)にし、
+     カード本文はスクロール領域(#cardArea)に分離。根拠語/コメントが多いカードでも
+     3択ボタンが押し出されて見えなくなることがないようにする。 */
+  #review.screen { overflow-y: hidden; }
+  #progressRow { display: flex; align-items: center; justify-content: space-between; gap: 4px; margin-bottom: 8px; flex-shrink: 0; }
   #progress { font-size: 12px; color: var(--sub); text-align: center; flex: 1; }
+  #cardArea {
+    flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    display: flex; flex-direction: column;  /* spinner/done-box の margin:auto 中央寄せ用 */
+  }
   .card {
-    flex: 1; display: flex; flex-direction: column; background: var(--card);
-    border: 1px solid var(--line); border-radius: 16px; padding: 16px 10px; overflow: hidden;
-    min-height: 0;
+    flex-shrink: 0;  /* 親(#cardArea)がflexでも縮めず、あふれた分は#cardAreaがスクロール */
+    display: flex; flex-direction: column; background: var(--card);
+    border: 1px solid var(--line); border-radius: 16px; padding: 16px 10px;
   }
   .card .meta { font-size: 13px; color: var(--sub); margin-bottom: 6px; }
   .card .meta a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
@@ -112,8 +120,6 @@
     border: none; background: transparent; color: var(--accent);
     font-size: 13px; padding: 8px 0 0; text-align: left;
   }
-  .card .spacer { flex: 1; }
-  .card .body.expanded ~ .spacer { display: none; }
   /* タグ（業態/タグ）チップ行。並び順は tags.json の記載順（news_collector と同一機構） */
   .taggroup { display: flex; align-items: flex-start; gap: 8px; margin-top: 8px; }
   .tglabel {
@@ -148,9 +154,16 @@
     border: 1px solid var(--line); border-radius: 10px;
     background: var(--bg); color: var(--text); resize: none; font-family: inherit;
   }
-  .verdicts { display: flex; gap: 8px; margin-top: 12px; }
+  /* 固定アクションバー（3択ボタン）。#cardArea のスクロール量に関わらず常時表示する。
+     iPhoneホームバー分は body 側の env(safe-area-inset-bottom) padding で既に確保済み。 */
+  #actionBar {
+    flex-shrink: 0; padding-top: 10px; margin-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+  #actionBar.hidden { display: none; }
+  .verdicts { display: flex; gap: 8px; }
   .verdicts button {
-    flex: 1; padding: 12px 4px; font-size: 13px; font-weight: 700; color: #fff;
+    flex: 1; padding: 14px 4px; font-size: 13px; font-weight: 700; color: #fff;
     border: none; border-radius: 14px; line-height: 1.5; touch-action: manipulation;
   }
   .verdicts .insider    { background: var(--insider); }
@@ -246,7 +259,14 @@
       <div id="progress"></div>
       <button id="btnSkip"></button>
     </div>
-    <div id="cardArea" style="flex:1;display:flex;flex-direction:column;min-height:0"></div>
+    <div id="cardArea"></div>
+    <div id="actionBar">
+      <div class="verdicts">
+        <button id="vInsider" class="insider">🟢 関係者</button>
+        <button id="vAmbiguous" class="ambiguous">🟠 保留</button>
+        <button id="vOutsider" class="outsider">🔴 関係者でない</button>
+      </div>
+    </div>
   </section>
 
   <!-- 一覧 -->
@@ -285,9 +305,13 @@ const VLABEL = {
 };
 const SYNC_MIN_INTERVAL = 30 * 60 * 1000;   // 自動同期は30分に1回まで（コミット削減）
 // tags.json が無い(404)場合の既定値
+// 2026-07-18 UX改善#3: 「タグ」に混在していた役割系候補（店主/料理人・調理師/従業員/
+// 開業準備/家族）は「役割」と重複していたため除去し「役割」へ一本化した（insider_rubric.md
+// 「役割セグメント」参照＝購買決定権区分としてのowner/prospect/craft/manager_hired/
+// employee/family）。「元飲食」は決定権区分ではない背景属性のため「タグ」に残す。
 const DEFAULT_TAGS = {
   gyotai: ["居酒屋", "和食", "寿司", "うどん・そば", "ラーメン", "中華", "カフェ", "焼肉", "焼鳥", "バー", "洋食", "その他"],
-  tags: ["店主", "料理人・調理師", "従業員", "開業準備", "元飲食", "家族"],
+  tags: ["元飲食"],
   role: ["店主・経営者", "開業検討", "雇われ店長", "料理人・職人", "従業員", "家族"],
 };
 
@@ -600,17 +624,11 @@ function cardHtml(item) {
           : `<li class="empty">（コメントなし）</li>`
       }</ul></div>
       <button class="toggleBody">▼ 続きを読む</button>
-      <div class="spacer"></div>
       ${tagSectionHtml("業態", "gyotai")}
       ${tagSectionHtml("タグ", "tags")}
       ${tagSectionHtml("役割", "role")}
       <div class="notebox"><textarea id="noteInput" rows="2"
         placeholder="メモ（任意）：判定理由・気づきなど"></textarea></div>
-      <div class="verdicts">
-        <button class="insider">🟢 関係者</button>
-        <button class="ambiguous">🟠 保留</button>
-        <button class="outsider">🔴 関係者でない</button>
-      </div>
     </div>`;
 }
 function wireCardCommon(area) {
@@ -651,6 +669,7 @@ function renderCard() {
     $("progress").textContent = "";
     setSubButton("", true, null);
     setSkipButton("", true, null);
+    $("actionBar").classList.add("hidden");
     area.innerHTML = `<div class="done-box"><div class="big">🎉</div>すべて判定済みです<br>
       <small>新しいデータは収集サイクルの後に増えます。<br>判定の修正は「一覧」から行タップ</small></div>`;
     pushVerdicts(true);  // 全件判定完了はスロットルを待たず即同期
@@ -660,10 +679,11 @@ function renderCard() {
   $("progress").textContent = `${queueIdx + 1} / ${queue.length} 件`;
   setSubButton("← 戻す", queueIdx <= 0, undo);
   setSkipButton("進む →", queueIdx + 1 >= queue.length, skip);
+  $("actionBar").classList.remove("hidden");
   area.innerHTML = cardHtml(item);
-  area.querySelector(".insider").onclick = () => rate("insider");
-  area.querySelector(".ambiguous").onclick = () => rate("ambiguous");
-  area.querySelector(".outsider").onclick = () => rate("outsider");
+  $("vInsider").onclick = () => rate("insider");
+  $("vAmbiguous").onclick = () => rate("ambiguous");
+  $("vOutsider").onclick = () => rate("outsider");
   wireCardCommon(area);
 }
 function renderReviewEdit(id) {
@@ -682,6 +702,7 @@ function renderReviewEdit(id) {
   $("progress").textContent = `判定の修正（現在: ${VLABEL[rec.verdict] || rec.verdict}）`;
   setSubButton("一覧に戻る（変更しない）", false, backToList);
   setSkipButton("", true, null);  // 修正画面ではスキップ操作は不要
+  $("actionBar").classList.remove("hidden");
   area.innerHTML = cardHtml(item);
   $("noteInput").value = rec.memo || "";
   markTags(area, rec);
@@ -700,9 +721,9 @@ function renderReviewEdit(id) {
     toast("更新しました");
     backToList();
   };
-  area.querySelector(".insider").onclick = () => save("insider");
-  area.querySelector(".ambiguous").onclick = () => save("ambiguous");
-  area.querySelector(".outsider").onclick = () => save("outsider");
+  $("vInsider").onclick = () => save("insider");
+  $("vAmbiguous").onclick = () => save("ambiguous");
+  $("vOutsider").onclick = () => save("outsider");
 }
 function backToList() {
   renderList();
